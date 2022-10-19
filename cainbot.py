@@ -21,6 +21,8 @@ act1_zones = [
     "Jail",
     "Cathedral and Catacombs",
     "The Pit",
+    "Tristram",
+    "Moo Moo Farm",
 ]
 act2_zones = [
     "Sewers",
