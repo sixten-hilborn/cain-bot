@@ -4,6 +4,7 @@ import discord
 import json
 import requests
 import typing
+import enum
 from discord.ext import tasks
 from discord.ext import commands
 
@@ -66,7 +67,7 @@ def main():
     intents = discord.Intents.default()
     intents.message_content = True
 
-    client = CainBotClient(intents=intents, command_prefix=('!', '.'))
+    client = CainBotClient(intents=intents)
     client.run(client.discord_token)
 
 def setup_config():
@@ -74,9 +75,23 @@ def setup_config():
         return json.load(json_file)
 
 
+class Notify(enum.Enum):
+    OFF = "off"
+    MENTION = "mention"
+    DM = "dm"
+    BOTH = "both"
+
+    @property
+    def is_mention(self):
+        return self == Notify.MENTION or self == Notify.BOTH
+
+    @property
+    def is_dm(self):
+        return self == Notify.DM or self == Notify.BOTH
+
 class CainBotClient(commands.Bot):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs, command_prefix=('!', '.'))
 
         self.config = setup_config()
         self.current_terror_zone = None
@@ -88,7 +103,7 @@ class CainBotClient(commands.Bot):
         self.add_command(untrack)
         self.add_command(gdpr)
         self.add_command(forget_me)
-        self.add_command(dnd)
+        self.add_command(notify)
 
     @property
     def discord_token(self):
@@ -115,7 +130,7 @@ class CainBotClient(commands.Bot):
 
     def get_or_add_user(self, user):
         if str(user.id) not in self.tracking["users"]:
-            self.tracking["users"][str(user.id)] = {"track_list":[], "do_not_disturb":False, "name":str(user)}
+            self.tracking["users"][str(user.id)] = {"track_list":[], "notify":Notify.MENTION.value, "name":str(user)}
         return self.tracking["users"][str(user.id)]
 
     async def on_ready(self):
@@ -141,9 +156,15 @@ class CainBotClient(commands.Bot):
         zone_name = zone["terrorZone"]["zone"]
         if self.current_terror_zone != zone_name:
             tracking_users = []
-            for user, userdata in self.tracking["users"].items():
-                if zone_name in userdata["track_list"] and not userdata["do_not_disturb"]:
-                    tracking_users.append(user)
+            for user_id, userdata in self.tracking["users"].items():
+                notify_mode = Notify(userdata["notify"])
+                is_tracked_zone = zone_name in userdata["track_list"]
+                if is_tracked_zone and notify_mode.is_mention:
+                    tracking_users.append(user_id)
+                if is_tracked_zone and notify_mode.is_dm:
+                    user = await self.fetch_user(user_id)
+                    print(f'Sending new tracked zone to user_id: {user_id}, user(): {user}')
+                    await user.send(f'Terror zone changed to tracked **{zone_name}**!')
             message = "" if not tracking_users else "Ping " + " ".join([f"<@{user}>" for user in tracking_users]) + "\n"
             await self.send_event(f'Terror zone changed! Old zone was {self.current_terror_zone}\n{message}New terror zone is **{zone_name}**')
             self.current_terror_zone = zone_name
@@ -230,16 +251,16 @@ async def forget_me(ctx):
         await ctx.send(f'{ctx.author} not stored')
 
 @commands.command()
-async def dnd(ctx, flag: typing.Optional[bool] = None):
+async def notify(ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"] = None):
     """
-    Enable/disable Do Not Disturb mode (DND=no notifications).
+    Set notification mode (off=no notifications, mention=ping in events channel, dm=private message, both=mention and dm).
     """
+    print(f'Responding to notify chatop from {ctx.author}, mode: {mode}')
     user = client.get_or_add_user(ctx.author)
-    if not flag is None:
-        user["do_not_disturb"] = flag
+    if not mode is None:
+        user["notify"] = mode
         client.write_tracking()
-    message = "Do Not Disturb mode (_no_ notifications)" if flag else "Normal mode"
-    await ctx.send(f'{ctx.author} is in {message}')
+    await ctx.send(f'{ctx.author} notification mode set to "{user["notify"]}"')
 
 class D2RunewizardClient():
     @staticmethod
