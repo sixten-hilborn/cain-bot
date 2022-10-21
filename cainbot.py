@@ -175,7 +175,7 @@ class CainBotClient(commands.Bot):
     @tasks.loop(seconds=60)
     async def check_terror_zone(self):
         zone = D2RunewizardClient.get_terror_zone()
-        zone_name = zone["terrorZone"]["zone"]
+        zone_name = zone["terrorZone"]["zone"] if zone else None
         if self.current_terror_zone != zone_name:
             tracking_users = []
             for user_id, userdata in self.tracking["users"].items():
