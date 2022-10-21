@@ -5,6 +5,8 @@ import json
 import requests
 import typing
 import enum
+import datetime
+import time
 from discord.ext import tasks
 from discord.ext import commands
 
@@ -64,6 +66,17 @@ all_zones = [
     act5_zones,
 ]
 
+ladder_reset_dates = [
+    datetime.date(2022, 4, 28),
+    datetime.date(2022, 10, 6),
+]
+runes = [
+    'el', 'eld', 'tir', 'nef', 'eth', 'ith', 'tal', 'ral', 'ort', 'thul',
+    'amn', 'sol', 'shael', 'dol', 'hel', 'io','lum', 'ko', 'fal', 'lem',
+    'pul', 'um', 'mal', 'ist', 'gul', 'vex', 'ohm', 'lo', 'sur', 'ber',
+    'jah', 'cham', 'zod'
+]
+
 def main():
     global client
     intents = discord.Intents.default()
@@ -98,6 +111,7 @@ class CainBotClient(commands.Bot):
         self.config = setup_config()
         self.current_terror_zone = None
         self.tracking = CainBotClient.read_tracking()
+        self.rune_tracker = RuneTracker(self) if self.config.get("track_runes", False) else None
 
         self.add_command(tzone)
         self.add_command(list_zones)
@@ -106,6 +120,9 @@ class CainBotClient(commands.Bot):
         self.add_command(gdpr)
         self.add_command(forget_me)
         self.add_command(notify)
+        if self.rune_tracker is not None:
+            self.add_command(runedrop_list)
+            self.add_command(runedrop_add)
 
     @property
     def discord_token(self):
@@ -134,6 +151,9 @@ class CainBotClient(commands.Bot):
         if str(user.id) not in self.tracking["users"]:
             self.tracking["users"][str(user.id)] = {"track_list":[], "notify":Notify.MENTION.value, "name":str(user)}
         return self.tracking["users"][str(user.id)]
+
+    def try_get_user(self, user):
+        return self.tracking["users"].get(str(user.id))
 
     async def on_ready(self):
         print(f'Bot logged into Discord as "{self.user}"')
@@ -218,7 +238,7 @@ async def untrack(ctx, zone_name):
     Remove tracking.
     """
     print(f'Responding to untrack chatop from {ctx.author}')
-    user = client.tracking["users"].get(str(ctx.author.id))
+    user = client.try_get_user(ctx.author)
     if not user:
         await ctx.send(f'{ctx.author} has no tracking data stored')
         return
@@ -235,8 +255,9 @@ async def gdpr(ctx):
     """
     Get all stored data on your user.
     """
-    if str(ctx.author.id) in client.tracking["users"]:
-        await ctx.send(f'Data on {ctx.author}:\n```{client.tracking["users"][str(ctx.author.id)]}```')
+    user = client.try_get_user(ctx.author)
+    if user is not None:
+        await ctx.send(f'Data on {ctx.author}:\n```{user}```')
     else:
         await ctx.send(f'{ctx.author} not stored')
 
@@ -264,6 +285,32 @@ async def notify(ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"]
         client.write_tracking()
     await ctx.send(f'{ctx.author} notification mode set to "{user["notify"]}"')
 
+@commands.command(name="runedrop-add")
+async def runedrop_add(ctx, rune: str, date: str = datetime.date.today().isoformat()):
+    """
+    Add rune drop to personal list.
+    """
+    print(f'Responding to runedrop-add chatop from {ctx.author}, rune: {rune}, date: {date}')
+    rune_tracker = client.rune_tracker
+    added_rune, added_date = rune_tracker.add(ctx.author, rune, date)
+    await ctx.send(f'{ctx.author} added :{added_rune}: on {added_date}')
+
+@commands.command(name="runedrop-list")
+async def runedrop_list(ctx):
+    """
+    List all personal rune drops.
+    """
+    print(f'Responding to runedrop-list chatop from {ctx.author}')
+    rune_tracker = client.rune_tracker
+    runes = rune_tracker.list(ctx.author)
+    if not runes:
+        return await ctx.send(f'{ctx.author} has no tracked rune drops in current season')
+    rune_list_str = ''
+    for rune in runes:
+        date_obj = datetime.date.fromisoformat(rune["date"])
+        rune_list_str += f'* :{rune["rune"]}: (<t:{int(time.mktime(date_obj.timetuple()))}:d>)\n'
+    await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
+
 class D2RunewizardClient():
     @staticmethod
     def get_terror_zone():
@@ -282,6 +329,30 @@ class D2RunewizardClient():
         return payload
 
 
+class RuneTracker():
+    def __init__(self, bot_client):
+        self.bot_client = bot_client
+
+    @staticmethod
+    def parse_rune(name):
+        rune = name.strip(':').lower()
+        if rune not in runes:
+            raise Exception(f'No such rune \"{rune}\"')
+        return rune
+
+    def add(self, discord_user, rune_str, date_str):
+        user = self.bot_client.get_or_add_user(discord_user)
+        rune = self.parse_rune(rune_str)
+        date = datetime.date.fromisoformat(date_str)
+        user.setdefault("runedrop_list", []).append({'rune': rune, 'date': date.isoformat()})
+        self.bot_client.write_tracking()
+        return rune, date
+
+    def list(self, discord_user):
+        user = self.bot_client.try_get_user(discord_user)
+        if user is None:
+            return None
+        return user.get("runedrop_list")
 
 if __name__ == "__main__":
     main()
