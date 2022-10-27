@@ -23,5 +23,5 @@ Then create `cainbot.conf` with your Discord token
 Finally start the bot with:
 
 ```
-python3 cainbot.py
+python -m cainbot
 ```
