@@ -8,5 +8,6 @@ class TestCainbot(unittest.TestCase):
         self.assertEqual(cainbot.runes[0], "el")
         self.assertEqual(cainbot.runes[-1], "zod")
 
+
 if __name__ == '__main__':
     unittest.main()

@@ -73,10 +73,11 @@ ladder_reset_dates = [
 ]
 runes = [
     'el', 'eld', 'tir', 'nef', 'eth', 'ith', 'tal', 'ral', 'ort', 'thul',
-    'amn', 'sol', 'shael', 'dol', 'hel', 'io','lum', 'ko', 'fal', 'lem',
+    'amn', 'sol', 'shael', 'dol', 'hel', 'io', 'lum', 'ko', 'fal', 'lem',
     'pul', 'um', 'mal', 'ist', 'gul', 'vex', 'ohm', 'lo', 'sur', 'ber',
     'jah', 'cham', 'zod'
 ]
+
 
 def main():
     global client
@@ -86,12 +87,15 @@ def main():
     client = CainBotClient(intents=intents)
     client.run(client.discord_token)
 
+
 def setup_config():
     with open('cainbot.conf') as json_file:
         return json.load(json_file)
 
+
 def all_zones_flat():
     return [zone for act_zones in all_zones for zone in act_zones]
+
 
 class Notify(enum.Enum):
     OFF = "off"
@@ -106,6 +110,7 @@ class Notify(enum.Enum):
     @property
     def is_dm(self):
         return self == Notify.DM or self == Notify.BOTH
+
 
 class CainBotClient(commands.Bot):
     def __init__(self, *args, **kwargs):
@@ -133,7 +138,8 @@ class CainBotClient(commands.Bot):
         return self.config["discord_token"]
 
     async def send_event(self, message):
-        channels = [channel for channel in self.get_all_channels() if channel.name == self.config["discord_channel_name"]]
+        channel_name = self.config["discord_channel_name"]
+        channels = [channel for channel in self.get_all_channels() if channel.name == channel_name]
         if not channels:
             print('ERROR: Unable to access channel, please check discord_channel_name')
         for channel in channels:
@@ -145,7 +151,7 @@ class CainBotClient(commands.Bot):
             with open('tracking.json') as json_file:
                 return json.load(json_file)
         except IOError:
-            return {"users":{}}
+            return {"users": {}}
 
     def write_tracking(self):
         with open('tracking.json', 'w') as json_file:
@@ -153,7 +159,11 @@ class CainBotClient(commands.Bot):
 
     def get_or_add_user(self, user):
         if str(user.id) not in self.tracking["users"]:
-            self.tracking["users"][str(user.id)] = {"track_list":[], "notify":Notify.MENTION.value, "name":str(user)}
+            self.tracking["users"][str(user.id)] = {
+                "track_list": [],
+                "notify": Notify.MENTION.value,
+                "name": str(user)
+            }
         return self.tracking["users"][str(user.id)]
 
     def try_get_user(self, user):
@@ -175,7 +185,6 @@ class CainBotClient(commands.Bot):
         await context.send(str(exception))
         return await super().on_command_error(context, exception)
 
-
     @tasks.loop(seconds=60)
     async def check_terror_zone(self):
         zone = D2RunewizardClient.get_terror_zone()
@@ -194,9 +203,14 @@ class CainBotClient(commands.Bot):
                     user = await self.fetch_user(user_id)
                     print(f'Sending new tracked zone to user_id: {user_id}, user(): {user}')
                     await user.send(f'Terror zone changed to tracked **{zone_name}**!')
-            message = "" if not tracking_users else "Ping " + " ".join([f"<@{user}>" for user in tracking_users]) + "\n"
-            await self.send_event(f'Terror zone changed! Old zone was {self.current_terror_zone}\n{message}New terror zone is **{zone_name}**')
+            lines = []
+            lines.append(f'Terror zone changed! Old zone was {self.current_terror_zone}')
+            if tracking_users:
+                lines.append("Ping " + " ".join([f"<@{user}>" for user in tracking_users]))
+            lines.append(f'New terror zone is **{zone_name}**')
+            await self.send_event('\n'.join(lines))
             self.current_terror_zone = zone_name
+
 
 @commands.command()
 async def tzone(ctx):
@@ -207,6 +221,7 @@ async def tzone(ctx):
     zone = client.current_terror_zone
     response = zone if zone else "Unknown zone"
     await ctx.send(response)
+
 
 @commands.command(name="list-zones")
 async def list_zones(ctx):
@@ -221,16 +236,17 @@ async def list_zones(ctx):
             formatted_zones += f"    {zone}\n"
     await ctx.send(f'Available zones:\n```{formatted_zones}```')
 
+
 @commands.command(name="set-tzone")
 async def set_tzone(ctx, zone_name):
     """
     Update current active terror zone.
     """
     print(f'Responding to set-tzone chatop from {ctx.author}')
-    zone = client.current_terror_zone
     if zone_name not in all_zones_flat():
         return await ctx.send(f"Unknown zone: {zone_name}")
     await client.set_tzone(zone_name)
+
 
 @commands.command()
 async def track(ctx, zone_name):
@@ -248,6 +264,7 @@ async def track(ctx, zone_name):
         user["track_list"].append(zone_name)
         client.write_tracking()
         await ctx.send(f'{ctx.author} now tracking {zone_name}')
+
 
 @commands.command()
 async def untrack(ctx, zone_name):
@@ -267,6 +284,7 @@ async def untrack(ctx, zone_name):
     else:
         await ctx.send(f'{ctx.author} did not track {zone_name}')
 
+
 @commands.command()
 async def gdpr(ctx):
     """
@@ -277,6 +295,7 @@ async def gdpr(ctx):
         await ctx.send(f'Data on {ctx.author}:\n```{user}```')
     else:
         await ctx.send(f'{ctx.author} not stored')
+
 
 @commands.command(name="forget-me")
 async def forget_me(ctx):
@@ -290,17 +309,20 @@ async def forget_me(ctx):
     else:
         await ctx.send(f'{ctx.author} not stored')
 
+
 @commands.command()
 async def notify(ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"] = None):
     """
-    Set notification mode (off=no notifications, mention=ping in events channel, dm=private message, both=mention and dm).
+    Set notification mode (off=no notifications, mention=ping in events channel, dm=private message,
+    both=mention and dm).
     """
     print(f'Responding to notify chatop from {ctx.author}, mode: {mode}')
     user = client.get_or_add_user(ctx.author)
-    if not mode is None:
+    if mode is not None:
         user["notify"] = mode
         client.write_tracking()
     await ctx.send(f'{ctx.author} notification mode set to "{user["notify"]}"')
+
 
 @commands.command(name="runedrop-add")
 async def runedrop_add(ctx, rune: str, date: str = datetime.date.today().isoformat()):
@@ -311,6 +333,7 @@ async def runedrop_add(ctx, rune: str, date: str = datetime.date.today().isoform
     rune_tracker = client.rune_tracker
     added_rune, added_date = rune_tracker.add(ctx.author, rune, date)
     await ctx.send(f'{ctx.author} added :{added_rune}: on {added_date}')
+
 
 @commands.command(name="runedrop-list")
 async def runedrop_list(ctx):
@@ -328,11 +351,15 @@ async def runedrop_list(ctx):
         rune_list_str += f'* :{rune["rune"]}: (<t:{int(time.mktime(date_obj.timetuple()))}:d>)\n'
     await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
 
+
 class D2RunewizardClient():
     @staticmethod
     def get_terror_zone():
         try:
-            response = requests.get(f'https://d2runewizard.com/api/terror-zone', params=D2RunewizardClient.get_api_token_params(), timeout=10)
+            response = requests.get(
+                'https://d2runewizard.com/api/terror-zone',
+                params=D2RunewizardClient.get_api_token_params(),
+                timeout=10)
             response.raise_for_status()
 
             return response.json()
@@ -343,7 +370,7 @@ class D2RunewizardClient():
     @staticmethod
     def get_terror_zone_from_html():
         try:
-            response = requests.get(f'https://d2runewizard.com/terror-zone-tracker', timeout=10)
+            response = requests.get('https://d2runewizard.com/terror-zone-tracker', timeout=10)
             response.raise_for_status()
 
             pattern = '''<h2 class=\\"terror-zone-tracker_currentZone[A-Za-z_\\- ]+\\">([A-Za-z' ]+)<\\/h2>'''
@@ -351,7 +378,7 @@ class D2RunewizardClient():
             if match is None:
                 return None
 
-            return { "terrorZone": {"zone": match.group(1)} }
+            return {"terrorZone": {"zone": match.group(1)}}
         except Exception as err:
             print(f'[TerrorZone] D2Runewizard API Error: {err}')
             return None
@@ -386,6 +413,7 @@ class RuneTracker():
         if user is None:
             return None
         return user.get("runedrop_list")
+
 
 if __name__ == "__main__":
     main()

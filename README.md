@@ -1,11 +1,12 @@
 # cain-bot
+
 Discord bot for Diablo 2 Resurrected events.
 
 ## Setup
 
 First install Python dependencies:
 
-```
+```bash
 pip3 install -r requirements.txt
 ```
 
@@ -22,7 +23,7 @@ Then create `cainbot.conf` with your Discord token
 
 Finally start the bot with:
 
-```
+```bash
 python -m cainbot
 ```
 
@@ -30,6 +31,6 @@ python -m cainbot
 
 Run unit tests with:
 
-```
+```bash
 python -m unittest
 ```
