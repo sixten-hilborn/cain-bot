@@ -89,6 +89,8 @@ def setup_config():
     with open('cainbot.conf') as json_file:
         return json.load(json_file)
 
+def all_zones_flat():
+    return [zone for act_zones in all_zones for zone in act_zones]
 
 class Notify(enum.Enum):
     OFF = "off"
@@ -114,6 +116,7 @@ class CainBotClient(commands.Bot):
         self.rune_tracker = RuneTracker(self) if self.config.get("track_runes", False) else None
 
         self.add_command(tzone)
+        self.add_command(set_tzone)
         self.add_command(list_zones)
         self.add_command(track)
         self.add_command(untrack)
@@ -176,7 +179,10 @@ class CainBotClient(commands.Bot):
     async def check_terror_zone(self):
         zone = D2RunewizardClient.get_terror_zone()
         zone_name = zone["terrorZone"]["zone"] if zone else None
-        if self.current_terror_zone != zone_name:
+        await self.set_tzone(zone_name)
+
+    async def set_tzone(self, zone_name):
+        if self.current_terror_zone != zone_name and zone_name is not None:
             tracking_users = []
             for user_id, userdata in self.tracking["users"].items():
                 notify_mode = Notify(userdata["notify"])
@@ -214,14 +220,24 @@ async def list_zones(ctx):
             formatted_zones += f"    {zone}\n"
     await ctx.send(f'Available zones:\n```{formatted_zones}```')
 
+@commands.command(name="set-tzone")
+async def set_tzone(ctx, zone_name):
+    """
+    Update current active terror zone.
+    """
+    print(f'Responding to set-tzone chatop from {ctx.author}')
+    zone = client.current_terror_zone
+    if zone_name not in all_zones_flat():
+        return await ctx.send(f"Unknown zone: {zone_name}")
+    await client.set_tzone(zone_name)
+
 @commands.command()
 async def track(ctx, zone_name):
     """
     Track specific terror zone, bot will ping you.
     """
     print(f'Responding to track chatop from {ctx.author}')
-    all_zones_flat = [zone for act_zones in all_zones for zone in act_zones]
-    if zone_name not in all_zones_flat:
+    if zone_name not in all_zones_flat():
         await ctx.send(f'Unknown zone: `{zone_name}`')
         return
     user = client.get_or_add_user(ctx.author)
