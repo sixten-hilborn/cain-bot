@@ -25,3 +25,11 @@ Finally start the bot with:
 ```
 python -m cainbot
 ```
+
+## Development
+
+Run unit tests with:
+
+```
+python -m unittest
+```
