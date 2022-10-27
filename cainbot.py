@@ -7,6 +7,7 @@ import typing
 import enum
 import datetime
 import time
+import re
 from discord.ext import tasks
 from discord.ext import commands
 
@@ -335,6 +336,22 @@ class D2RunewizardClient():
             response.raise_for_status()
 
             return response.json()
+        except Exception as err:
+            print(f'[TerrorZone] D2Runewizard API Error: {err}')
+            return D2RunewizardClient.get_terror_zone_from_html()
+
+    @staticmethod
+    def get_terror_zone_from_html():
+        try:
+            response = requests.get(f'https://d2runewizard.com/terror-zone-tracker', timeout=10)
+            response.raise_for_status()
+
+            pattern = '''<h2 class=\\"terror-zone-tracker_currentZone[A-Za-z_\\- ]+\\">([A-Za-z' ]+)<\\/h2>'''
+            match = re.search(pattern, response.text)
+            if match is None:
+                return None
+
+            return { "terrorZone": {"zone": match.group(1)} }
         except Exception as err:
             print(f'[TerrorZone] D2Runewizard API Error: {err}')
             return None
