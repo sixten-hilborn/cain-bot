@@ -146,7 +146,7 @@ class CainBotClient(commands.Bot):
         with open('tracking.json', 'w') as json_file:
             return json.dump(self.tracking, json_file)
 
-    def get_or_add_user(self, user):
+    def get_or_add_user(self, user) -> dict[str, typing.Any]:
         if str(user.id) not in self.tracking["users"]:
             self.tracking["users"][str(user.id)] = {
                 "track_list": [],
@@ -155,10 +155,10 @@ class CainBotClient(commands.Bot):
             }
         return self.tracking["users"][str(user.id)]
 
-    def try_get_user(self, user):
+    def try_get_user(self, user) -> typing.Optional[dict[str, typing.Any]]:
         return self.tracking["users"].get(str(user.id))
 
-    def get_rune_emoji(self, ctx, rune):
+    def get_rune_emoji(self, ctx: commands.Context, rune):
         rune = rune.lower()
         if ctx.guild:
             # Use emoji in current server, if this isn't a DM
@@ -222,6 +222,55 @@ class CainBotClient(commands.Bot):
             lines.append(f'New terror zone is **{zone_name}**')
             await self.send_event('\n'.join(lines))
             self.current_terror_zone = zone_name
+
+
+class RuneTracker():
+    def __init__(self, bot_client):
+        self.bot_client = typing.cast(CainBotClient, bot_client)
+
+    @staticmethod
+    def parse_rune(name: str) -> str:
+        rune = name.strip(':').lower()
+        if rune not in runes:
+            raise Exception(f'No such rune \"{rune}\"')
+        return rune
+
+    def add(self, discord_user, rune_str: str, date: datetime.date):
+        user = self.bot_client.get_or_add_user(discord_user)
+        rune = self.parse_rune(rune_str)
+        user.setdefault("runedrop_list", []).append({'rune': rune, 'date': date.isoformat()})
+        self.bot_client.write_tracking()
+        return rune, date
+
+    def list_for(self, discord_user):
+        user = self.bot_client.try_get_user(discord_user)
+        if user is None:
+            return None
+        return user.get("runedrop_list")
+
+    def top(self, n: int):
+        def sort_key(rune_drop):
+            return runes.index(rune_drop['rune'])
+        return sorted(self._all_rune_drops(), key=sort_key, reverse=True)[:n]
+
+    def pb(self):
+        user_rune_drops: dict[str, typing.Any] = {}
+        for rune_drop in self._all_rune_drops():
+            current_user = rune_drop['user']
+            if current_user in user_rune_drops:
+                current_user_best_drop = user_rune_drops[current_user]
+                if runes.index(current_user_best_drop['rune']) < runes.index(rune_drop['rune']):
+                    user_rune_drops[current_user] = rune_drop
+            else:
+                user_rune_drops[current_user] = rune_drop
+        return [dict(v, user=k) for k, v in user_rune_drops.items()]
+
+    def _all_rune_drops(self) -> list[dict[str, typing.Any]]:
+        rune_drops = []
+        for user_id, userdata in self.bot_client.tracking["users"].items():
+            for rune_drop in userdata.get("runedrop_list", []):
+                rune_drops.append(dict(rune_drop, user=userdata["name"]))
+        return rune_drops
 
 
 class GeneralCog(commands.Cog, name="General"):
@@ -340,64 +389,70 @@ class TerrorZoneCog(commands.Cog, name="Terror zones"):
 
 
 class RuneDropCog(commands.Cog, name="Rune drops"):
-    def __init__(self, client):
+    def __init__(self, client: CainBotClient):
         self.client = client
 
+    @property
+    def rune_tracker(self) -> RuneTracker:
+        return typing.cast(RuneTracker, self.client.rune_tracker)
+
     @commands.command(name="runedrop-add")
-    async def runedrop_add(self, ctx, rune: str, date: typing.Optional[str] = None):
+    async def runedrop_add(self, ctx: commands.Context, rune: str, date: typing.Optional[str] = None):
         """
         Add rune drop to personal list.
         """
         if date is None:
             date = datetime.date.today().isoformat()
-        print(f'Responding to runedrop-add chatop from {ctx.author}, rune: {rune}, date: {date}')
-        rune_tracker = self.client.rune_tracker
-        added_rune, added_date = rune_tracker.add(ctx.author, rune, date)
+        date_obj = datetime.date.fromisoformat(date)
+        print(f'Responding to runedrop-add chatop from {ctx.author}, rune: {rune}, date: {date_obj}')
+        added_rune, added_date = self.rune_tracker.add(ctx.author, rune, date_obj)
         await ctx.send(f'{ctx.author} added :{added_rune}: on {added_date}')
 
     @commands.command(name="runedrop-list")
-    async def runedrop_list(self, ctx):
+    async def runedrop_list(self, ctx: commands.Context):
         """
         List all personal rune drops.
         """
         print(f'Responding to runedrop-list chatop from {ctx.author}')
-        rune_tracker = self.client.rune_tracker
-        runes = rune_tracker.list(ctx.author)
+        runes = self.rune_tracker.list_for(ctx.author)
         if not runes:
             return await ctx.send(f'{ctx.author} has no tracked rune drops in current season')
+        rune_list_str = self._build_rune_list_str(ctx, runes)
+        await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
+
+    @commands.command(name="runedrop-top")
+    async def runedrop_top(self, ctx: commands.Context, n: int = 5):
+        """
+        List top `n` highest registered rune drops among all players.
+        """
+        print(f'Responding to runedrop-pb chatop from {ctx.author}')
+        runes = self.rune_tracker.top(n)
+        if not runes:
+            return await ctx.send('There are no tracked rune drops in current season')
+        rune_list_str = self._build_rune_list_str(ctx, runes)
+        await ctx.send(f'Highest rune drops in current season among all players:\n{rune_list_str}')
+
+    @commands.command(name="runedrop-pb")
+    async def runedrop_pb(self, ctx: commands.Context):
+        """
+        List each player's personal best (highest rune drop).
+        """
+        print(f'Responding to runedrop-pb chatop from {ctx.author}')
+        runes = self.rune_tracker.pb()
+        if not runes:
+            return await ctx.send('There are no tracked rune drops in current season')
+        rune_list_str = self._build_rune_list_str(ctx, runes)
+        await ctx.send(f"Each player's best rune drop in current season:\n{rune_list_str}")
+
+    def _build_rune_list_str(self, ctx: commands.Context, runes: list[dict[str, typing.Any]]):
         rune_list_str = ''
         for rune in runes:
             date_obj = datetime.date.fromisoformat(rune["date"])
             rune_emoji = self.client.get_rune_emoji(ctx, rune["rune"])
             timestamp = int(time.mktime(date_obj.timetuple()))
-            rune_list_str += f'* {rune_emoji} (<t:{timestamp}:d>)\n'
-        await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
-
-
-class RuneTracker():
-    def __init__(self, bot_client):
-        self.bot_client = bot_client
-
-    @staticmethod
-    def parse_rune(name):
-        rune = name.strip(':').lower()
-        if rune not in runes:
-            raise Exception(f'No such rune \"{rune}\"')
-        return rune
-
-    def add(self, discord_user, rune_str, date_str):
-        user = self.bot_client.get_or_add_user(discord_user)
-        rune = self.parse_rune(rune_str)
-        date = datetime.date.fromisoformat(date_str)
-        user.setdefault("runedrop_list", []).append({'rune': rune, 'date': date.isoformat()})
-        self.bot_client.write_tracking()
-        return rune, date
-
-    def list(self, discord_user):
-        user = self.bot_client.try_get_user(discord_user)
-        if user is None:
-            return None
-        return user.get("runedrop_list")
+            user_prefix = rune['user']+' ' if 'user' in rune else ''
+            rune_list_str += f'* {user_prefix}{rune_emoji} (<t:{timestamp}:d>)\n'
+        return rune_list_str
 
 
 if __name__ == "__main__":
