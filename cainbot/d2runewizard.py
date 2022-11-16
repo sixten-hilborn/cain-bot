@@ -25,7 +25,8 @@ class D2RunewizardClient():
             response = requests.get('https://d2runewizard.com/terror-zone-tracker', timeout=10)
             response.raise_for_status()
 
-            pattern = '''<h2 class=\\"terror-zone-tracker_currentZone[A-Za-z_\\- ]+\\">([A-Za-z', ]+)[<!>\\- ]*<\\/h2>'''
+            pattern = \
+                '''<h2 class=\\"terror-zone-tracker_currentZone[A-Za-z_\\- ]+\\">([A-Za-z', ]+)[<!>\\- ]*<\\/h2>'''
             match = re.search(pattern, response.text)
             if match is None:
                 err = f'regex {pattern} did not match in response: {response.text}'

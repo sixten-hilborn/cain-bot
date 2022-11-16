@@ -79,7 +79,6 @@ runes = [
 
 
 def main():
-    global client
     intents = discord.Intents.default()
     intents.message_content = True
 
@@ -120,23 +119,11 @@ class CainBotClient(commands.Bot):
         self.tracking = CainBotClient.read_tracking()
         self.rune_tracker = RuneTracker(self) if self.config.get("track_runes", False) else None
 
-        self.add_command(tzone)
-        self.add_command(set_tzone)
-        self.add_command(list_zones)
-        self.add_command(track)
-        self.add_command(untrack)
-        self.add_command(gdpr)
-        self.add_command(forget_me)
-        self.add_command(notify)
-        if self.rune_tracker is not None:
-            self.add_command(runedrop_list)
-            self.add_command(runedrop_add)
-
     @property
     def discord_token(self):
         return self.config["discord_token"]
 
-    async def send_event(self, message):
+    async def send_event(self, message: str):
         channel_name = self.config["discord_channel_name"]
         channels = [channel for channel in self.get_all_channels() if channel.name == channel_name]
         if not channels:
@@ -188,6 +175,12 @@ class CainBotClient(commands.Bot):
         servers = sorted([g.name for g in self.guilds])
         print(f'Connected to {len(servers)} servers: {", ".join(servers)}')
 
+        general_cog = GeneralCog(self)
+        self.help_command.cog = general_cog
+        await self.add_cog(general_cog)
+        if self.rune_tracker is not None:
+            await self.add_cog(RunedropCog(self))
+
         try:
             await self.wait_until_ready()
             self.check_terror_zone.start()
@@ -226,148 +219,149 @@ class CainBotClient(commands.Bot):
             self.current_terror_zone = zone_name
 
 
-@commands.command()
-async def tzone(ctx):
-    """
-    Show current active terror zone.
-    """
-    print(f'Responding to tzone chatop from {ctx.author}')
-    zone = client.current_terror_zone
-    response = zone if zone else "Unknown zone"
-    await ctx.send(response)
+class GeneralCog(commands.Cog, name="General"):
+    def __init__(self, client):
+        self.client = client
+
+    @commands.command()
+    async def tzone(self, ctx):
+        """
+        Show current active terror zone.
+        """
+        print(f'Responding to tzone chatop from {ctx.author}')
+        zone = self.client.current_terror_zone
+        response = zone if zone else "Unknown zone"
+        await ctx.send(response)
+
+    @commands.command(name="list-zones")
+    async def list_zones(self, ctx):
+        """
+        List all available terror zones.
+        """
+        print(f'Responding to list-zones chatop from {ctx.author}')
+        formatted_zones = ""
+        for act, zones in enumerate(all_zones):
+            formatted_zones += f"Act {act+1}:\n"
+            for zone in zones:
+                formatted_zones += f"    {zone}\n"
+        await ctx.send(f'Available zones:\n```{formatted_zones}```')
+
+    @commands.command(name="set-tzone")
+    async def set_tzone(self, ctx, zone_name):
+        """
+        Update current active terror zone.
+        """
+        print(f'Responding to set-tzone chatop from {ctx.author}')
+        if zone_name not in all_zones_flat():
+            return await ctx.send(f"Unknown zone: {zone_name}")
+        await self.client.set_tzone(zone_name)
+
+    @commands.command()
+    async def track(self, ctx, zone_name=commands.parameter(
+            description='The whole name of the zone(s) to track, see `.list-zones`.')):
+        """
+        Track specific terror zone, bot will ping you.
+        """
+        print(f'Responding to track chatop from {ctx.author}')
+        if zone_name not in all_zones_flat():
+            await ctx.send(f'Unknown zone: `{zone_name}`')
+            return
+        user = self.client.get_or_add_user(ctx.author)
+        if zone_name in user["track_list"]:
+            await ctx.send(f'{ctx.author} already tracking {zone_name}')
+        else:
+            user["track_list"].append(zone_name)
+            self.client.write_tracking()
+            await ctx.send(f'{ctx.author} now tracking {zone_name}')
+
+    @commands.command()
+    async def untrack(self, ctx, zone_name):
+        """
+        Remove tracking.
+        """
+        print(f'Responding to untrack chatop from {ctx.author}')
+        user = self.client.try_get_user(ctx.author)
+        if not user:
+            await ctx.send(f'{ctx.author} has no tracking data stored')
+            return
+
+        if zone_name in user["track_list"]:
+            user["track_list"].remove(zone_name)
+            self.client.write_tracking()
+            await ctx.send(f'{ctx.author} no longer tracking {zone_name}')
+        else:
+            await ctx.send(f'{ctx.author} did not track {zone_name}')
+
+    @commands.command()
+    async def gdpr(self, ctx):
+        """
+        Get all stored data on your user.
+        """
+        user = self.client.try_get_user(ctx.author)
+        if user is not None:
+            await ctx.send(f'Data on {ctx.author}:\n```{user}```')
+        else:
+            await ctx.send(f'{ctx.author} not stored')
+
+    @commands.command(name="forget-me")
+    async def forget_me(self, ctx):
+        """
+        Delete all stored data on your user.
+        """
+        if str(ctx.author.id) in self.client.tracking["users"]:
+            del self.client.tracking["users"][str(ctx.author.id)]
+            self.client.write_tracking()
+            await ctx.send(f'Data on {ctx.author} removed')
+        else:
+            await ctx.send(f'{ctx.author} not stored')
+
+    @commands.command()
+    async def notify(self, ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"] = None):
+        """
+        Set notification mode (off=no notifications, mention=ping in events channel, dm=private message,
+        both=mention and dm).
+        """
+        print(f'Responding to notify chatop from {ctx.author}, mode: {mode}')
+        user = self.client.get_or_add_user(ctx.author)
+        if mode is not None:
+            user["notify"] = mode
+            self.client.write_tracking()
+        await ctx.send(f'{ctx.author} notification mode set to "{user["notify"]}"')
 
 
-@commands.command(name="list-zones")
-async def list_zones(ctx):
-    """
-    List all available terror zones.
-    """
-    print(f'Responding to list-zones chatop from {ctx.author}')
-    formatted_zones = ""
-    for act, zones in enumerate(all_zones):
-        formatted_zones += f"Act {act+1}:\n"
-        for zone in zones:
-            formatted_zones += f"    {zone}\n"
-    await ctx.send(f'Available zones:\n```{formatted_zones}```')
+class RunedropCog(commands.Cog, name="Rune drops"):
+    def __init__(self, client):
+        self.client = client
 
+    @commands.command(name="runedrop-add")
+    async def runedrop_add(self, ctx, rune: str, date: typing.Optional[str] = None):
+        """
+        Add rune drop to personal list.
+        """
+        if date is None:
+            date = datetime.date.today().isoformat()
+        print(f'Responding to runedrop-add chatop from {ctx.author}, rune: {rune}, date: {date}')
+        rune_tracker = self.client.rune_tracker
+        added_rune, added_date = rune_tracker.add(ctx.author, rune, date)
+        await ctx.send(f'{ctx.author} added :{added_rune}: on {added_date}')
 
-@commands.command(name="set-tzone")
-async def set_tzone(ctx, zone_name):
-    """
-    Update current active terror zone.
-    """
-    print(f'Responding to set-tzone chatop from {ctx.author}')
-    if zone_name not in all_zones_flat():
-        return await ctx.send(f"Unknown zone: {zone_name}")
-    await client.set_tzone(zone_name)
-
-
-@commands.command()
-async def track(ctx, zone_name):
-    """
-    Track specific terror zone, bot will ping you.
-    """
-    print(f'Responding to track chatop from {ctx.author}')
-    if zone_name not in all_zones_flat():
-        await ctx.send(f'Unknown zone: `{zone_name}`')
-        return
-    user = client.get_or_add_user(ctx.author)
-    if zone_name in user["track_list"]:
-        await ctx.send(f'{ctx.author} already tracking {zone_name}')
-    else:
-        user["track_list"].append(zone_name)
-        client.write_tracking()
-        await ctx.send(f'{ctx.author} now tracking {zone_name}')
-
-
-@commands.command()
-async def untrack(ctx, zone_name):
-    """
-    Remove tracking.
-    """
-    print(f'Responding to untrack chatop from {ctx.author}')
-    user = client.try_get_user(ctx.author)
-    if not user:
-        await ctx.send(f'{ctx.author} has no tracking data stored')
-        return
-
-    if zone_name in user["track_list"]:
-        user["track_list"].remove(zone_name)
-        client.write_tracking()
-        await ctx.send(f'{ctx.author} no longer tracking {zone_name}')
-    else:
-        await ctx.send(f'{ctx.author} did not track {zone_name}')
-
-
-@commands.command()
-async def gdpr(ctx):
-    """
-    Get all stored data on your user.
-    """
-    user = client.try_get_user(ctx.author)
-    if user is not None:
-        await ctx.send(f'Data on {ctx.author}:\n```{user}```')
-    else:
-        await ctx.send(f'{ctx.author} not stored')
-
-
-@commands.command(name="forget-me")
-async def forget_me(ctx):
-    """
-    Delete all stored data on your user.
-    """
-    if str(ctx.author.id) in client.tracking["users"]:
-        del client.tracking["users"][str(ctx.author.id)]
-        client.write_tracking()
-        await ctx.send(f'Data on {ctx.author} removed')
-    else:
-        await ctx.send(f'{ctx.author} not stored')
-
-
-@commands.command()
-async def notify(ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"] = None):
-    """
-    Set notification mode (off=no notifications, mention=ping in events channel, dm=private message,
-    both=mention and dm).
-    """
-    print(f'Responding to notify chatop from {ctx.author}, mode: {mode}')
-    user = client.get_or_add_user(ctx.author)
-    if mode is not None:
-        user["notify"] = mode
-        client.write_tracking()
-    await ctx.send(f'{ctx.author} notification mode set to "{user["notify"]}"')
-
-
-@commands.command(name="runedrop-add")
-async def runedrop_add(ctx, rune: str, date: typing.Optional[str] = None):
-    """
-    Add rune drop to personal list.
-    """
-    if date is None:
-        date = datetime.date.today().isoformat()
-    print(f'Responding to runedrop-add chatop from {ctx.author}, rune: {rune}, date: {date}')
-    rune_tracker = client.rune_tracker
-    added_rune, added_date = rune_tracker.add(ctx.author, rune, date)
-    await ctx.send(f'{ctx.author} added :{added_rune}: on {added_date}')
-
-
-@commands.command(name="runedrop-list")
-async def runedrop_list(ctx):
-    """
-    List all personal rune drops.
-    """
-    print(f'Responding to runedrop-list chatop from {ctx.author}')
-    rune_tracker = client.rune_tracker
-    runes = rune_tracker.list(ctx.author)
-    if not runes:
-        return await ctx.send(f'{ctx.author} has no tracked rune drops in current season')
-    rune_list_str = ''
-    for rune in runes:
-        date_obj = datetime.date.fromisoformat(rune["date"])
-        rune_emoji = client.get_rune_emoji(ctx, rune["rune"])
-        timestamp = int(time.mktime(date_obj.timetuple()))
-        rune_list_str += f'* {rune_emoji} (<t:{timestamp}:d>)\n'
-    await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
+    @commands.command(name="runedrop-list")
+    async def runedrop_list(self, ctx):
+        """
+        List all personal rune drops.
+        """
+        print(f'Responding to runedrop-list chatop from {ctx.author}')
+        rune_tracker = self.client.rune_tracker
+        runes = rune_tracker.list(ctx.author)
+        if not runes:
+            return await ctx.send(f'{ctx.author} has no tracked rune drops in current season')
+        rune_list_str = ''
+        for rune in runes:
+            date_obj = datetime.date.fromisoformat(rune["date"])
+            rune_emoji = self.client.get_rune_emoji(ctx, rune["rune"])
+            timestamp = int(time.mktime(date_obj.timetuple()))
+            rune_list_str += f'* {rune_emoji} (<t:{timestamp}:d>)\n'
+        await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
 
 
 class RuneTracker():
