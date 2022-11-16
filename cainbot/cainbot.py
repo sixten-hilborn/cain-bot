@@ -129,7 +129,10 @@ class CainBotClient(commands.Bot):
         if not channels:
             print('ERROR: Unable to access channel, please check discord_channel_name')
         for channel in channels:
-            await channel.send(message)
+            if isinstance(channel, discord.abc.Messageable):
+                await channel.send(message)
+            else:
+                print(f'ERROR: channel is unsupported type: {type(channel)}')
 
     @staticmethod
     def read_tracking():
@@ -176,10 +179,12 @@ class CainBotClient(commands.Bot):
         print(f'Connected to {len(servers)} servers: {", ".join(servers)}')
 
         general_cog = GeneralCog(self)
-        self.help_command.cog = general_cog
+        if self.help_command is not None:
+            self.help_command.cog = general_cog
         await self.add_cog(general_cog)
+        await self.add_cog(TerrorZoneCog(self))
         if self.rune_tracker is not None:
-            await self.add_cog(RunedropCog(self))
+            await self.add_cog(RuneDropCog(self))
 
         try:
             await self.wait_until_ready()
@@ -220,6 +225,34 @@ class CainBotClient(commands.Bot):
 
 
 class GeneralCog(commands.Cog, name="General"):
+    def __init__(self, client):
+        self.client = client
+
+    @commands.command()
+    async def gdpr(self, ctx):
+        """
+        Get all stored data on your user.
+        """
+        user = self.client.try_get_user(ctx.author)
+        if user is not None:
+            await ctx.send(f'Data on {ctx.author}:\n```{user}```')
+        else:
+            await ctx.send(f'{ctx.author} not stored')
+
+    @commands.command(name="forget-me")
+    async def forget_me(self, ctx):
+        """
+        Delete all stored data on your user.
+        """
+        if str(ctx.author.id) in self.client.tracking["users"]:
+            del self.client.tracking["users"][str(ctx.author.id)]
+            self.client.write_tracking()
+            await ctx.send(f'Data on {ctx.author} removed')
+        else:
+            await ctx.send(f'{ctx.author} not stored')
+
+
+class TerrorZoneCog(commands.Cog, name="Terror zones"):
     def __init__(self, client):
         self.client = client
 
@@ -293,29 +326,6 @@ class GeneralCog(commands.Cog, name="General"):
             await ctx.send(f'{ctx.author} did not track {zone_name}')
 
     @commands.command()
-    async def gdpr(self, ctx):
-        """
-        Get all stored data on your user.
-        """
-        user = self.client.try_get_user(ctx.author)
-        if user is not None:
-            await ctx.send(f'Data on {ctx.author}:\n```{user}```')
-        else:
-            await ctx.send(f'{ctx.author} not stored')
-
-    @commands.command(name="forget-me")
-    async def forget_me(self, ctx):
-        """
-        Delete all stored data on your user.
-        """
-        if str(ctx.author.id) in self.client.tracking["users"]:
-            del self.client.tracking["users"][str(ctx.author.id)]
-            self.client.write_tracking()
-            await ctx.send(f'Data on {ctx.author} removed')
-        else:
-            await ctx.send(f'{ctx.author} not stored')
-
-    @commands.command()
     async def notify(self, ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"] = None):
         """
         Set notification mode (off=no notifications, mention=ping in events channel, dm=private message,
@@ -329,7 +339,7 @@ class GeneralCog(commands.Cog, name="General"):
         await ctx.send(f'{ctx.author} notification mode set to "{user["notify"]}"')
 
 
-class RunedropCog(commands.Cog, name="Rune drops"):
+class RuneDropCog(commands.Cog, name="Rune drops"):
     def __init__(self, client):
         self.client = client
 
