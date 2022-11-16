@@ -168,6 +168,21 @@ class CainBotClient(commands.Bot):
     def try_get_user(self, user):
         return self.tracking["users"].get(str(user.id))
 
+    def get_rune_emoji(self, ctx, rune):
+        rune = rune.lower()
+        if ctx.guild:
+            # Use emoji in current server, if this isn't a DM
+            for emoji in ctx.guild.emojis:
+                if emoji.name == rune:
+                    return str(emoji)
+        # Fall back to an emoji from any server this bot is a member of
+        for emoji in ctx.bot.emojis:
+            if emoji.name == rune:
+                return str(emoji)
+
+        # Oh no, just print rune name with capital letter
+        return rune.title()
+
     async def on_ready(self):
         print(f'Bot logged into Discord as "{self.user}"')
         servers = sorted([g.name for g in self.guilds])
@@ -324,10 +339,12 @@ async def notify(ctx, mode: typing.Literal[None, "off", "mention", "dm", "both"]
 
 
 @commands.command(name="runedrop-add")
-async def runedrop_add(ctx, rune: str, date: str = datetime.date.today().isoformat()):
+async def runedrop_add(ctx, rune: str, date: typing.Optional[str] = None):
     """
     Add rune drop to personal list.
     """
+    if date is None:
+        date = datetime.date.today().isoformat()
     print(f'Responding to runedrop-add chatop from {ctx.author}, rune: {rune}, date: {date}')
     rune_tracker = client.rune_tracker
     added_rune, added_date = rune_tracker.add(ctx.author, rune, date)
@@ -347,7 +364,9 @@ async def runedrop_list(ctx):
     rune_list_str = ''
     for rune in runes:
         date_obj = datetime.date.fromisoformat(rune["date"])
-        rune_list_str += f'* :{rune["rune"]}: (<t:{int(time.mktime(date_obj.timetuple()))}:d>)\n'
+        rune_emoji = client.get_rune_emoji(ctx, rune["rune"])
+        timestamp = int(time.mktime(date_obj.timetuple()))
+        rune_list_str += f'* {rune_emoji} (<t:{timestamp}:d>)\n'
     await ctx.send(f'{ctx.author} rune drops in current season:\n{rune_list_str}')
 
 
