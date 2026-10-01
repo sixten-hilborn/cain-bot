@@ -6,6 +6,7 @@ import unittest
 class TestCainbot(unittest.TestCase):
 
     def test_get_terror_zone(self):
-        current_zone = D2RunewizardClient.get_terror_zone()
+        client = D2RunewizardClient(contact_email="test@example.com")
+        current_zone = client.get_terror_zone()
         assert current_zone is not None
-        self.assertIn(current_zone['terrorZone']['zone'], all_zones_flat())
+        self.assertIn(current_zone.name, all_zones_flat())

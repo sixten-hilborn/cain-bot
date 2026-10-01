@@ -18,25 +18,28 @@ act1_zones = [
     "Cold Plains and The Cave",
     "Burial Grounds, The Crypt, and The Mausoleum",
     "Stony Field",
-    "Dark Wood",
-    "The Forgotten Tower",
-    "Jail",
-    "Cathedral and Catacombs",
-    "The Pit",
     "Tristram",
+    "Dark Wood and Underground Passage",
+    "Black Marsh and The Hole",
+    "The Forgotten Tower",
+    "The Pit",
+    "Jail and Barracks",
+    "Cathedral and Catacombs",
     "Moo Moo Farm",
 ]
 act2_zones = [
-    "Sewers",
+    "Lut Gholein Sewers",
     "Rocky Waste and Stony Tomb",
     "Dry Hills and Halls of the Dead",
     "Far Oasis",
     "Lost City, Valley of Snakes, and Claw Viper Temple",
+    "Ancient Tunnels",
     "Arcane Sanctuary",
     "Tal Rasha's Tombs and Tal Rasha's Chamber",
 ]
 act3_zones = [
     "Spider Forest and Spider Cavern",
+    "Great Marsh",
     "Flayer Jungle and Flayer Dungeon",
     "Kurast Bazaar, Ruined Temple, and Disused Fane",
     "Kurast Sewers",
@@ -46,14 +49,13 @@ act3_zones = [
 act4_zones = [
     "Outer Steppes and Plains of Despair",
     "River of Flame and City of the Damned",
-    "Chaos Sanctuary",
+    "The Chaos Sanctuary",
 ]
 act5_zones = [
-    "Bloody Foothills",
-    "Frigid Highlands",
-    "Glacial Trail",
+    "Bloody Foothills, Frigid Highlands, and Abaddon",
+    "Glacial Trail and Drifter Cavern",
     "Crystalline Passage and Frozen River",
-    "Arreat Plateau",
+    "Arreat Plateau and Pit of Acheron",
     "Nihlathak's Temple, Halls of Anguish, Halls of Pain, and Halls of Vaught",
     "Ancient's Way and Icy Cellar",
     "Worldstone Keep, Throne of Destruction, and Worldstone Chamber",
@@ -69,12 +71,20 @@ all_zones = [
 ladder_reset_dates = [
     datetime.date(2022, 4, 28),
     datetime.date(2022, 10, 6),
+    datetime.date(2026, 8, 21),
 ]
 runes = [
     'el', 'eld', 'tir', 'nef', 'eth', 'ith', 'tal', 'ral', 'ort', 'thul',
     'amn', 'sol', 'shael', 'dol', 'hel', 'io', 'lum', 'ko', 'fal', 'lem',
     'pul', 'um', 'mal', 'ist', 'gul', 'vex', 'ohm', 'lo', 'sur', 'ber',
     'jah', 'cham', 'zod'
+]
+
+POLL_TIMES = [
+    datetime.time(hour=hour, minute=minute, second=15,
+                  tzinfo=datetime.timezone.utc)
+    for hour in range(24)
+    for minute in (0, 30)
 ]
 
 
@@ -118,6 +128,7 @@ class CainBotClient(commands.Bot):
         self.current_terror_zone = None
         self.tracking = CainBotClient.read_tracking()
         self.rune_tracker = RuneTracker(self) if self.config.get("track_runes", False) else None
+        self.d2runewizard_client = D2RunewizardClient(contact_email=self.config["contact_email"])
 
     @property
     def discord_token(self):
@@ -188,7 +199,8 @@ class CainBotClient(commands.Bot):
 
         try:
             await self.wait_until_ready()
-            self.check_terror_zone.start()
+            await self.check_terror_zone()
+            self.check_terror_zone_task.start()
         except RuntimeError as err:
             print(f'Background Task Error: {err}')
         await self.send_event("I'm back online, stay awhile and listen!\nType `.help` for more info.")
@@ -197,10 +209,13 @@ class CainBotClient(commands.Bot):
         await context.send(str(exception))
         return await super().on_command_error(context, exception)
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(time=POLL_TIMES)
+    async def check_terror_zone_task(self):
+        await self.check_terror_zone()
+
     async def check_terror_zone(self):
-        zone = D2RunewizardClient.get_terror_zone()
-        zone_name = zone["terrorZone"]["zone"] if zone else None
+        zone = self.d2runewizard_client.get_terror_zone()
+        zone_name = zone.name if zone else None
         await self.set_tzone(zone_name)
 
     async def set_tzone(self, zone_name):
