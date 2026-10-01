@@ -257,11 +257,25 @@ class RuneTracker():
         self.bot_client.write_tracking()
         return rune, date
 
+    @staticmethod
+    def _current_season_start() -> datetime.date:
+        today = datetime.date.today()
+        return max(
+            (date for date in ladder_reset_dates if date <= today),
+            default=datetime.date.min,
+        )
+
     def list_for(self, discord_user):
         user = self.bot_client.try_get_user(discord_user)
         if user is None:
             return None
-        return user.get("runedrop_list")
+
+        season_start = self._current_season_start()
+        return [
+            drop
+            for drop in user.get("runedrop_list", [])
+            if datetime.date.fromisoformat(drop["date"]) >= season_start
+        ]
 
     def top(self, n: int):
         def sort_key(rune_drop):
@@ -281,11 +295,13 @@ class RuneTracker():
         return [dict(v, user=k) for k, v in user_rune_drops.items()]
 
     def _all_rune_drops(self) -> list[dict[str, typing.Any]]:
-        rune_drops = []
-        for user_id, userdata in self.bot_client.tracking["users"].items():
-            for rune_drop in userdata.get("runedrop_list", []):
-                rune_drops.append(dict(rune_drop, user=userdata["name"]))
-        return rune_drops
+        season_start = self._current_season_start()
+        return [
+            dict(drop, user=userdata["name"])
+            for userdata in self.bot_client.tracking["users"].values()
+            for drop in userdata.get("runedrop_list", [])
+            if datetime.date.fromisoformat(drop["date"]) >= season_start
+        ]
 
 
 class GeneralCog(commands.Cog, name="General"):

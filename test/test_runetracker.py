@@ -34,25 +34,30 @@ class TestUser():
 
 class TestRuneTracker(unittest.TestCase):
 
+    def setUp(self):
+        self.client = DummyBotClient()
+        self.rune_tracker = cainbot.RuneTracker(self.client)
+        self.user = TestUser(1234)
+
     def test_rune_tracker_add_one(self):
-        client = DummyBotClient()
-        rune_tracker = cainbot.RuneTracker(client)
-        user = TestUser(1234)
-        rune, date = rune_tracker.add(user, ':gul:', datetime.date(2022, 11, 16))
+        rune, date = self.rune_tracker.add(self.user, ':gul:', datetime.date(2022, 11, 16))
         self.assertEqual(rune, "gul")
         self.assertEqual(date, datetime.date(2022, 11, 16))
         self.assertIn(rune, cainbot.runes)
 
     def test_rune_tracker_add_and_list(self):
-        client = DummyBotClient()
-        rune_tracker = cainbot.RuneTracker(client)
-        user = TestUser(1234)
-
-        list = rune_tracker.list_for(user)
+        list = self.rune_tracker.list_for(self.user)
         self.assertFalse(list)
 
-        rune_tracker.add(user, ':ist:', datetime.date(2022, 11, 16))
-        (entry,) = rune_tracker.list_for(user)
+        self.rune_tracker.add(self.user, ':ist:', datetime.date(2026, 11, 16))
+        (entry,) = self.rune_tracker.list_for(self.user)
         self.assertEqual(entry["rune"], "ist")
-        self.assertEqual(entry["date"], "2022-11-16")
+        self.assertEqual(entry["date"], "2026-11-16")
         self.assertIn(entry["rune"], cainbot.runes)
+
+    def test_rune_tracker_add_and_list_old_season(self):
+        list = self.rune_tracker.list_for(self.user)
+        self.assertFalse(list)
+
+        self.rune_tracker.add(self.user, ':ist:', datetime.date(2022, 11, 16))
+        self.assertFalse(list)
