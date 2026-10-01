@@ -336,12 +336,16 @@ class TerrorZoneCog(commands.Cog, name="Terror zones"):
         List all available terror zones.
         """
         print(f'Responding to list-zones chatop from {ctx.author}')
+        user = self.client.try_get_user(ctx.author)
         formatted_zones = ""
         for act, zones in enumerate(all_zones):
             formatted_zones += f"Act {act+1}:\n"
             for zone in zones:
-                formatted_zones += f"    {zone}\n"
-        await ctx.send(f'Available zones:\n```{formatted_zones}```')
+                if user is not None and zone in user["track_list"]:
+                    formatted_zones += f"  * {zone}\n"
+                else:
+                    formatted_zones += f"    {zone}\n"
+        await ctx.send(f'Available zones (asterisk before tracked ones):\n```{formatted_zones}```')
 
     @commands.command(name="set-tzone")
     async def set_tzone(self, ctx, zone_name):
