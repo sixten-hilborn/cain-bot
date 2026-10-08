@@ -26,7 +26,7 @@ act1_zones = [
     "Dark Wood and Underground Passage",
     "Black Marsh and The Hole",
     "The Forgotten Tower",
-    "The Pit",
+    "Tamoe Highland, Outer Cloister, and The Pit",
     "Jail and Barracks",
     "Cathedral and Catacombs",
     "Moo Moo Farm",
