@@ -1,6 +1,8 @@
 import requests
+import logging
 from .types import TerrorZone
 
+logger = logging.getLogger(__name__)
 
 class D2RunewizardClient:
     def __init__(self, contact_email: str):
@@ -18,5 +20,11 @@ class D2RunewizardClient:
         )
         response.raise_for_status()
 
-        json_data = response.json()
+        try:
+            json_data = response.json()
+        except ValueError:
+            logger.error(
+                f"Invalid JSON: status={response.status_code} content_type={response.headers.get('Content-Type')} body={response.text[:300]}",
+            )
+            raise
         return TerrorZone(name=json_data["currentTerrorZone"]["zone"])

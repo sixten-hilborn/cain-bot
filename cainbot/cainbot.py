@@ -1,17 +1,21 @@
 # This example requires the 'message_content' intent.
 
+import asyncio
 import discord
 import json
+import logging
 import typing
 import enum
 import datetime
 import time
 from discord.ext import tasks
 from discord.ext import commands
+
 from .d2runewizard import D2RunewizardClient
 
 __version__ = '0.1.0'
 client = None
+logger = logging.getLogger(__name__)
 
 act1_zones = [
     "Blood Moor and Den of Evil",
@@ -89,6 +93,8 @@ POLL_TIMES = [
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
+
     intents = discord.Intents.default()
     intents.message_content = True
 
@@ -214,9 +220,17 @@ class CainBotClient(commands.Bot):
         await self.check_terror_zone()
 
     async def check_terror_zone(self):
-        zone = self.d2runewizard_client.get_terror_zone()
-        zone_name = zone.name if zone else None
-        await self.set_tzone(zone_name)
+        try:
+            zone = await asyncio.to_thread(
+                self.d2runewizard_client.get_terror_zone
+            )
+        except Exception:
+            logger.exception(
+                "Failed to fetch Terror Zone; retrying at next scheduled poll"
+            )
+            return
+
+        await self.set_tzone(zone.name if zone else None)
 
     async def set_tzone(self, zone_name):
         if self.current_terror_zone != zone_name and zone_name is not None:
